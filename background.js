@@ -358,12 +358,39 @@ function setBadge(text, color) {
   if (color) browser.action.setBadgeBackgroundColor({ color });
 }
 
+// ─── Определение языка источника ─────────────────────────────────────────────
+
+const SUPPORTED_LANGS = new Set(
+  LANGUAGES.map(l => l.code)
+);
+
+async function detectSourceLanguage(text) {
+  try {
+    const result = await browser.i18n.detectLanguage(text);
+    if (!result.isReliable) return "en";
+    const top = result.languages[0];
+    if (!top) return "en";
+    // Некоторые коды могут быть длиннее (zh-CN → zh), берём первые две буквы
+    const code = top.language.split("-")[0];
+    if (SUPPORTED_LANGS.has(code)) return code;
+  } catch (e) {
+    console.warn("[QT] Language detection failed:", e);
+  }
+  return "en";
+}
+
 // ─── Перевод ──────────────────────────────────────────────────────────────────
 
 async function handleTranslation({ text, from, to }) {
-  // Определяем языки
-  const sourceLanguage = from === "auto" ? "en" : from; // TODO: детектор
   const targetLanguage = to ?? "ru";
+  const sourceLanguage = (from === "auto" || !from)
+    ? await detectSourceLanguage(text)
+    : from;
+
+  // Если источник совпадает с целью — возвращаем без перевода
+  if (sourceLanguage === targetLanguage) {
+    return text;
+  }
 
   // Создаём ключ для кэша воркеров по языковой паре
   const pairKey = `${sourceLanguage}-${targetLanguage}`;

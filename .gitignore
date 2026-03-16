@@ -10,6 +10,9 @@ content_script_backup*.js
 # Agent context — local only
 CLAUDE.md
 
+# web-ext build output
+web-ext-artifacts/
+
 # OS
 .DS_Store
 Thumbs.db

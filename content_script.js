@@ -54,18 +54,47 @@
 
     popupEl = document.createElement("div");
     popupEl.id = "qt-popup";
-    popupEl.innerHTML = `
-      <div class="qt-header">
-        <span class="qt-logo" style="display:flex;align-items:center;gap:6px;"><img src="${iconUrl}" class="qt-icon" style="width:16px;height:16px;object-fit:contain;display:block;flex-shrink:0;"> Quick Translate</span>
-        <button class="qt-close" title="Close">✕</button>
-      </div>
-      <div class="qt-original">${escapeHtml(originalText)}</div>
-      <div class="qt-divider"></div>
-      <div class="qt-result qt-loading">
-        <span class="qt-spinner"></span>
-        <span>Translating…</span>
-      </div>
-    `;
+
+    const header = document.createElement("div");
+    header.className = "qt-header";
+
+    const logo = document.createElement("span");
+    logo.className = "qt-logo";
+    logo.style.cssText = "display:flex;align-items:center;gap:6px;";
+
+    const img = document.createElement("img");
+    img.src = iconUrl;
+    img.className = "qt-icon";
+    img.style.cssText = "width:16px;height:16px;object-fit:contain;display:block;flex-shrink:0;";
+    logo.appendChild(img);
+    logo.appendChild(document.createTextNode(" Quick Translate"));
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "qt-close";
+    closeBtn.title = "Close";
+    closeBtn.textContent = "✕";
+
+    header.appendChild(logo);
+    header.appendChild(closeBtn);
+
+    const originalDiv = document.createElement("div");
+    originalDiv.className = "qt-original";
+    originalDiv.textContent = originalText;
+
+    const divider = document.createElement("div");
+    divider.className = "qt-divider";
+
+    const resultDiv = document.createElement("div");
+    resultDiv.className = "qt-result qt-loading";
+    const spinner = document.createElement("span");
+    spinner.className = "qt-spinner";
+    resultDiv.appendChild(spinner);
+    resultDiv.appendChild(document.createTextNode("Translating…"));
+
+    popupEl.appendChild(header);
+    popupEl.appendChild(originalDiv);
+    popupEl.appendChild(divider);
+    popupEl.appendChild(resultDiv);
 
     positionPopup(popupEl, mousePos);
     document.body.appendChild(popupEl);
@@ -77,7 +106,7 @@
     if (!popupEl) return;
     const el = popupEl.querySelector(".qt-result");
     el.classList.remove("qt-loading");
-    el.innerHTML = escapeHtml(text);
+    el.textContent = text;
   }
 
   function setError(msg) {
@@ -85,7 +114,7 @@
     const el = popupEl.querySelector(".qt-result");
     el.classList.remove("qt-loading");
     el.classList.add("qt-error");
-    el.innerHTML = "⚠ " + escapeHtml(msg);
+    el.textContent = "⚠ " + msg;
   }
 
   function removePopup() {

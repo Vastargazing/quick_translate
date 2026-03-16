@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Quick Translate",
+  "version": "0.1.0",
+  "description": "Instant translation on right-click selection",
+  "permissions": [
+    "contextMenus",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon.png"
+    }
+  },
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content_script.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "worker/translations-engine.worker.js",
+        "engine/translations-engine.js",
+        "wasm/bergamot-translator.wasm",
+        "wasm/bergamot-translator.js",
+        "models/*",
+        "icons/*",
+        "fonts/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "icons": {
+    "48": "icons/icon.png",
+    "96": "icons/icon.png"
+  }
+}

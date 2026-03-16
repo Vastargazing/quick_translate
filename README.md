@@ -2,7 +2,7 @@
 
 > Instant **offline** translation via right-click — powered by Mozilla's Bergamot engine, no cloud, no API keys.
 
-![Quick Translate demo](https://github.com/Vastargazing/quick_translate/raw/master/icons/icon.png)
+![alt text](image.png)
 
 ---
 

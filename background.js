@@ -100,9 +100,15 @@ browser.contextMenus.onClicked.addListener((info, tab) => {
   const text = info.selectionText?.trim();
   if (!text) return;
 
-  browser.tabs.sendMessage(tab.id, {
-    type: "TRANSLATE_SELECTION",
-    text,
+  const msg = { type: "TRANSLATE_SELECTION", text };
+
+  browser.tabs.sendMessage(tab.id, msg).catch(async () => {
+    // Content script not loaded yet (tab was open before extension install/reload)
+    await browser.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["content_script.js"],
+    });
+    browser.tabs.sendMessage(tab.id, msg);
   });
 });
 
@@ -330,7 +336,7 @@ async function loadSingleModelPayload(src, tgt, registry) {
   try {
     const [modelBuf, lexBuf, vocabBuf] = await Promise.all([
       getOrDownload(`${key}/model`, `${base}/${modelFile.path}`),
-      getOrDownload(`${key}/lex`,   `${base}/${lexFile.path}`),
+      getOrDownload(`${key}/lex`, `${base}/${lexFile.path}`),
       getOrDownload(`${key}/vocab`, `${base}/${vocabFile.path}`),
     ]);
     return {
@@ -338,7 +344,7 @@ async function loadSingleModelPayload(src, tgt, registry) {
       targetLanguage: tgt,
       languageModelFiles: {
         model: { buffer: modelBuf, record: { name: `model.${key}.intgemm.alphas.bin` } },
-        lex:   { buffer: lexBuf,   record: { name: `lex.50.50.${key}.s2t.bin` } },
+        lex: { buffer: lexBuf, record: { name: `lex.50.50.${key}.s2t.bin` } },
         vocab: { buffer: vocabBuf, record: { name: `vocab.${key}.spm` } },
       },
     };

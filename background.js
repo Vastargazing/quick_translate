@@ -34,55 +34,58 @@ const LANGUAGES = [
   { code: "sq", name: "Albanian" },
   { code: "sr", name: "Serbian" },
   { code: "uk", name: "Ukrainian" },
-  { code: "zh", name: "Chinese" },
 ];
 
 function langName(code) {
   return LANGUAGES.find(l => l.code === code)?.name ?? code.toUpperCase();
 }
 
-browser.contextMenus.create({
-  id: "quick-translate",
-  title: 'Translate: "%s"',
-  contexts: ["selection"],
-  icons: {
-    "16": "icons/icon.png",
-    "32": "icons/icon.png",
-  },
-});
+browser.contextMenus.removeAll().then(() => {
 
-// Разделитель
-browser.contextMenus.create({
-  id: "qt-separator",
-  type: "separator",
-  contexts: ["selection"],
-});
-
-// Родительский пункт "🌐 Language: Russian"
-browser.contextMenus.create({
-  id: "qt-lang-parent",
-  title: "🌐 Language: Russian",
-  contexts: ["selection"],
-});
-
-// Подменю с языками
-for (const { code, name } of LANGUAGES) {
   browser.contextMenus.create({
-    id: `qt-lang-${code}`,
-    parentId: "qt-lang-parent",
-    title: name,
-    type: "radio",
-    checked: code === "ru",
+    id: "quick-translate",
+    title: 'Translate: "%s"',
+    contexts: ["selection"],
+    icons: {
+      "16": "icons/icon.png",
+      "32": "icons/icon.png",
+    },
+  });
+
+  // Разделитель
+  browser.contextMenus.create({
+    id: "qt-separator",
+    type: "separator",
     contexts: ["selection"],
   });
-}
 
-// Инициализируем заголовок и checked из storage при старте
-browser.storage.local.get("targetLang").then(({ targetLang }) => {
-  const code = targetLang ?? "ru";
-  browser.contextMenus.update("qt-lang-parent", { title: `🌐 Language: ${langName(code)}` });
-  browser.contextMenus.update(`qt-lang-${code}`, { checked: true });
-});
+  // Родительский пункт "🌐 Language: Russian"
+  browser.contextMenus.create({
+    id: "qt-lang-parent",
+    title: "🌐 Language: Russian",
+    contexts: ["selection"],
+  });
+
+  // Подменю с языками
+  for (const { code, name } of LANGUAGES) {
+    browser.contextMenus.create({
+      id: `qt-lang-${code}`,
+      parentId: "qt-lang-parent",
+      title: name,
+      type: "radio",
+      checked: code === "ru",
+      contexts: ["selection"],
+    });
+  }
+
+  // Инициализируем заголовок и checked из storage при старте
+  browser.storage.local.get("targetLang").then(({ targetLang }) => {
+    const code = targetLang ?? "ru";
+    browser.contextMenus.update("qt-lang-parent", { title: `🌐 Language: ${langName(code)}` });
+    browser.contextMenus.update(`qt-lang-${code}`, { checked: true });
+  });
+
+}); // end removeAll
 
 browser.contextMenus.onClicked.addListener((info, tab) => {
   // Смена языка
@@ -197,94 +200,156 @@ function startWorker(sourceLanguage, targetLanguage) {
   });
 }
 
+// ─── IndexedDB (кэш моделей) ─────────────────────────────────────────────────
+
+const IDB_NAME = "qt-models-v1";
+const IDB_STORE = "files";
+let _db = null;
+
+async function openModelDB() {
+  if (_db) return _db;
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+    req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function idbGet(key) {
+  const db = await openModelDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(key);
+    req.onsuccess = e => resolve(e.target.result ?? null);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+async function idbPut(key, value) {
+  const db = await openModelDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).put(value, key);
+    req.onsuccess = () => resolve();
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+// ─── Mozilla CDN ──────────────────────────────────────────────────────────────
+
+const REGISTRY_URL = "https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/db/models.json";
+const RELEASE_PRIORITY = ["Release", "Release Desktop", "Release Android", "Nightly"];
+let _registry = null;
+
+async function getRegistry() {
+  if (_registry) return _registry;
+  // Проверяем кэш в IDB (чтобы не грузить каждый раз)
+  const cached = await idbGet("__registry__");
+  if (cached) {
+    _registry = JSON.parse(new TextDecoder().decode(cached));
+    return _registry;
+  }
+  console.log("[QT] Fetching model registry from Mozilla CDN...");
+  const resp = await fetch(REGISTRY_URL);
+  if (!resp.ok) throw new Error(`Registry fetch failed: ${resp.status}`);
+  _registry = await resp.json();
+  await idbPut("__registry__", new TextEncoder().encode(JSON.stringify(_registry)));
+  return _registry;
+}
+
+function pickBestModel(variants) {
+  for (const status of RELEASE_PRIORITY) {
+    const found = variants.find(v => v.releaseStatus === status);
+    if (found) return found;
+  }
+  return variants[0];
+}
+
+async function downloadAndDecompress(url, idbKey) {
+  console.log(`[QT] Downloading ${idbKey}...`);
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Download failed for ${idbKey}: HTTP ${resp.status}`);
+  let buf;
+  if (url.endsWith(".gz")) {
+    const ds = new DecompressionStream("gzip");
+    buf = await new Response(resp.body.pipeThrough(ds)).arrayBuffer();
+  } else {
+    buf = await resp.arrayBuffer();
+  }
+  await idbPut(idbKey, buf);
+  console.log(`[QT] Cached ${idbKey} (${(buf.byteLength / 1024 / 1024).toFixed(1)} MB)`);
+  return buf;
+}
+
+async function getOrDownload(idbKey, remoteUrl) {
+  const cached = await idbGet(idbKey);
+  if (cached) return cached;
+  return downloadAndDecompress(remoteUrl, idbKey);
+}
+
 // ─── Загрузка WASM + моделей ──────────────────────────────────────────────────
 
 async function loadEnginePayload(sourceLanguage, targetLanguage) {
-  // Грузим WASM бинарник
   const wasmUrl = browser.runtime.getURL("wasm/bergamot-translator.wasm");
   const wasmResp = await fetch(wasmUrl);
   if (!wasmResp.ok) throw new Error(`Failed to fetch WASM: ${wasmResp.status}`);
   const bergamotWasmArrayBuffer = await wasmResp.arrayBuffer();
 
-  // Грузим модели для языковой пары
-  // Сначала пробуем прямую пару (en→ru)
-  // Если нет — через pivot (xx→en + en→yy)
-  const translationModelPayloads = await loadModelPayloads(
-    sourceLanguage,
-    targetLanguage
-  );
-
+  const translationModelPayloads = await loadModelPayloads(sourceLanguage, targetLanguage);
   return { bergamotWasmArrayBuffer, translationModelPayloads };
 }
 
 async function loadModelPayloads(sourceLanguage, targetLanguage) {
-  const modelsBase = browser.runtime.getURL("models/");
+  const registry = await getRegistry();
+  const directKey = `${sourceLanguage}-${targetLanguage}`;
+  const hasDirectModel = Array.isArray(registry.models[directKey]) && registry.models[directKey].length > 0;
 
-  // Пробуем прямую пару
-  const directKey = `${sourceLanguage}${targetLanguage}`;
-  const directExists = await checkModelExists(modelsBase, directKey);
-
-  if (directExists) {
-    const payload = await loadSingleModelPayload(
-      modelsBase,
-      sourceLanguage,
-      targetLanguage
-    );
-    return [payload];
+  if (hasDirectModel) {
+    return [await loadSingleModelPayload(sourceLanguage, targetLanguage, registry)];
   }
 
   // Pivot через английский: src→en + en→tgt
-  console.log(`[QT] No direct model ${directKey}, trying pivot via English`);
-
-  const [pivotPayload1, pivotPayload2] = await Promise.all([
-    loadSingleModelPayload(modelsBase, sourceLanguage, "en"),
-    loadSingleModelPayload(modelsBase, "en", targetLanguage),
+  console.log(`[QT] No direct model for ${directKey}, pivoting via English`);
+  const [p1, p2] = await Promise.all([
+    loadSingleModelPayload(sourceLanguage, "en", registry),
+    loadSingleModelPayload("en", targetLanguage, registry),
   ]);
-
-  return [pivotPayload1, pivotPayload2];
+  return [p1, p2];
 }
 
-async function checkModelExists(modelsBase, langPairKey) {
+async function loadSingleModelPayload(src, tgt, registry) {
+  const key = `${src}${tgt}`;
+  const regKey = `${src}-${tgt}`;
+  const variants = registry.models[regKey];
+  if (!variants?.length) throw new Error(`No CDN model available for ${regKey}`);
+
+  const best = pickBestModel(variants);
+  const { model: modelFile, lexicalShortlist: lexFile, vocab: vocabFile } = best.files;
+  const base = registry.baseUrl;
+
+  setBadge("⬇", "#0077cc");
   try {
-    const resp = await fetch(
-      `${modelsBase}${langPairKey}/model.${langPairKey}.intgemm.alphas.bin`,
-      { method: "HEAD" }
-    );
-    return resp.ok;
-  } catch {
-    return false;
+    const [modelBuf, lexBuf, vocabBuf] = await Promise.all([
+      getOrDownload(`${key}/model`, `${base}/${modelFile.path}`),
+      getOrDownload(`${key}/lex`,   `${base}/${lexFile.path}`),
+      getOrDownload(`${key}/vocab`, `${base}/${vocabFile.path}`),
+    ]);
+    return {
+      sourceLanguage: src,
+      targetLanguage: tgt,
+      languageModelFiles: {
+        model: { buffer: modelBuf, record: { name: `model.${key}.intgemm.alphas.bin` } },
+        lex:   { buffer: lexBuf,   record: { name: `lex.50.50.${key}.s2t.bin` } },
+        vocab: { buffer: vocabBuf, record: { name: `vocab.${key}.spm` } },
+      },
+    };
+  } finally {
+    setBadge("", "");
   }
 }
 
-async function loadSingleModelPayload(modelsBase, src, tgt) {
-  const key = `${src}${tgt}`;
-  const base = `${modelsBase}${key}/`;
-
-  // Грузим все три файла модели параллельно
-  const [modelBuf, lexBuf, vocabBuf] = await Promise.all([
-    fetchBuffer(`${base}model.${key}.intgemm.alphas.bin`),
-    fetchBuffer(`${base}lex.50.50.${key}.s2t.bin`),
-    fetchBuffer(`${base}vocab.${key}.spm`),
-  ]);
-
-  return {
-    sourceLanguage: src,
-    targetLanguage: tgt,
-    languageModelFiles: {
-      model: {
-        buffer: modelBuf,
-        record: { name: `model.${key}.intgemm.alphas.bin` },
-      },
-      lex: {
-        buffer: lexBuf,
-        record: { name: `lex.50.50.${key}.s2t.bin` },
-      },
-      vocab: {
-        buffer: vocabBuf,
-        record: { name: `vocab.${key}.spm` },
-      },
-    },
-  };
+function setBadge(text, color) {
+  browser.action.setBadgeText({ text });
+  if (color) browser.action.setBadgeBackgroundColor({ color });
 }
 
 // ─── Перевод ──────────────────────────────────────────────────────────────────
@@ -334,12 +399,4 @@ async function handleTranslation({ text, from, to }) {
       reject(new Error("Translation timeout (30s)"));
     }, 30_000);
   });
-}
-
-// ─── Утилиты ──────────────────────────────────────────────────────────────────
-
-async function fetchBuffer(url) {
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${url}`);
-  return resp.arrayBuffer();
 }

@@ -19,7 +19,6 @@ const LANGUAGES = [
     { code: "sq", name: "Albanian — Албанский" },
     { code: "sr", name: "Serbian — Сербский" },
     { code: "uk", name: "Ukrainian — Украинский" },
-    { code: "zh", name: "Chinese — Китайский" },
 ];
 
 const select = document.getElementById("lang-select");

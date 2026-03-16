@@ -3,6 +3,11 @@
   "name": "Quick Translate",
   "version": "0.1.0",
   "description": "Instant translation on right-click selection",
+  "homepage_url": "https://github.com/Vastargazing/quick_translate",
+  "developer": {
+    "name": "Vastargazing",
+    "url": "https://github.com/Vastargazing"
+  },
   "permissions": [
     "contextMenus",
     "storage",
@@ -18,7 +23,9 @@
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "48": "icons/icon.png"
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "96": "icons/icon96.png"
     }
   },
   "background": {
@@ -54,7 +61,9 @@
     }
   ],
   "icons": {
-    "48": "icons/icon.png",
-    "96": "icons/icon.png"
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "96": "icons/icon96.png",
+    "128": "icons/icon128.png"
   }
 }

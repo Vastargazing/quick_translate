@@ -1,0 +1,15 @@
+# Бинарные файлы моделей — хостятся в GitHub Releases
+models/**/*.bin
+models/**/*.wasm
+# Оставляем vocab файлы в репо (маленькие, ~0.86MB, нужны для инициализации)
+# models/**/*.spm  ← не игнорируем
+
+# WASM бинарник — тоже в Releases
+wasm/bergamot-translator.wasm
+
+# Бэкапы
+content_script_backup*.js
+
+# OS
+.DS_Store
+Thumbs.db
